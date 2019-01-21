@@ -3,22 +3,60 @@ import isEqual from 'lodash/isEqual'
 import PropTypes from 'prop-types'
 import * as GitHub from '../../../github-client'
 
-function Query({query, variables, children, normalize = data => data}) {
-  const client = useContext(GitHub.Context)
+function useSetState(initialState) {
   const [state, setState] = useReducer(
-    (state, newState) => ({...state, ...newState}),
-    {loaded: false, fetching: false, data: null, error: null},
+    (prevState, action) => ({
+      ...prevState,
+      ...action,
+    }),
+    initialState,
   )
 
+  return [state, setState]
+}
+
+function useSetSafeState(initialState) {
+  const [state, setState] = useSetState(initialState)
+
+  const mountedRef = useRef()
   useEffect(() => {
-    if (isEqual(previousInputs.current, [query, variables])) {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const setSafeState = (...args) => mountedRef.current && setState(...args)
+
+  return [state, setSafeState]
+}
+
+function usePrevious(value) {
+  const ref = useRef()
+  useEffect(() => {
+    ref.current = value
+  })
+  return ref.current
+}
+
+function Query({query, variables, children, normalize = data => data}) {
+  const client = useContext(GitHub.Context)
+  const [state, setSafeState] = useSetSafeState({
+    loaded: false,
+    fetching: false,
+    data: null,
+    error: null,
+  })
+
+  useEffect(() => {
+    if (isEqual(previousInputs, [query, variables])) {
       return
     }
-    setState({fetching: true})
+    setSafeState({fetching: true})
     client
       .request(query, variables)
       .then(res =>
-        safeSetState({
+        setSafeState({
           data: normalize(res),
           error: null,
           loaded: true,
@@ -26,7 +64,7 @@ function Query({query, variables, children, normalize = data => data}) {
         }),
       )
       .catch(error =>
-        safeSetState({
+        setSafeState({
           error,
           data: null,
           loaded: false,
@@ -35,21 +73,7 @@ function Query({query, variables, children, normalize = data => data}) {
       )
   })
 
-  const previousInputs = useRef()
-  useEffect(() => {
-    previousInputs.current = [query, variables]
-  })
-
-  const mountedRef = useRef(false)
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  const safeSetState = (...args) => mountedRef.current && setState(...args)
-
+  const previousInputs = usePrevious([query, variables])
   return children(state)
 }
 
