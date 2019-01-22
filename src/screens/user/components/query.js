@@ -31,6 +31,17 @@ function useSetSafeState(initialState) {
   return [state, setSafeState]
 }
 
+function useDeeplyCompareEffect(callback, inputs) {
+  const cleanupRef = useRef()
+  useEffect(() => {
+    if (!isEqual(inputs, previousInputs)) {
+      cleanupRef.current = callback()
+    }
+    return cleanupRef.current
+  })
+  const previousInputs = usePrevious(inputs)
+}
+
 function usePrevious(value) {
   const ref = useRef()
   useEffect(() => {
@@ -48,32 +59,31 @@ function Query({query, variables, children, normalize = data => data}) {
     error: null,
   })
 
-  useEffect(() => {
-    if (isEqual(previousInputs, [query, variables])) {
-      return
-    }
-    setSafeState({fetching: true})
-    client
-      .request(query, variables)
-      .then(res =>
-        setSafeState({
-          data: normalize(res),
-          error: null,
-          loaded: true,
-          fetching: false,
-        }),
-      )
-      .catch(error =>
-        setSafeState({
-          error,
-          data: null,
-          loaded: false,
-          fetching: false,
-        }),
-      )
-  })
+  useDeeplyCompareEffect(
+    () => {
+      setSafeState({fetching: true})
+      client
+        .request(query, variables)
+        .then(res =>
+          setSafeState({
+            data: normalize(res),
+            error: null,
+            loaded: true,
+            fetching: false,
+          }),
+        )
+        .catch(error =>
+          setSafeState({
+            error,
+            data: null,
+            loaded: false,
+            fetching: false,
+          }),
+        )
+    },
+    [query, variables],
+  )
 
-  const previousInputs = usePrevious([query, variables])
   return children(state)
 }
 
